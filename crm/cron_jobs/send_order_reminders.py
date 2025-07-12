@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
-
-import requests
+from gql import gql, Client
+from gql.transport.requests import RequestsHTTPTransport
 import datetime
 import logging
+import os
 
-# Set up logging
-log_file = "/tmp/order_reminders_log.txt"
+# Ensure /tmp directory exists
+os.makedirs('/tmp', exist_ok=True)
+log_file = '/tmp/order_reminders_log.txt'
+
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
 
-# Calculate date one week ago
-one_week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+# Define date 7 days ago
+seven_days_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
 
-# Define GraphQL query
-query = """
-query GetRecentOrders {
+# Set up GraphQL transport
+transport = RequestsHTTPTransport(
+    url='http://localhost:8000/graphql',
+    verify=False,
+    retries=3,
+)
+
+client = Client(transport=transport, fetch_schema_from_transport=False)
+
+# Define the GraphQL query
+query = gql("""
+query {
   orders(orderDate_Gte: "%s") {
     id
     customer {
@@ -21,26 +33,19 @@ query GetRecentOrders {
     }
   }
 }
-""" % one_week_ago
+""" % seven_days_ago)
 
-# Send request to GraphQL endpoint
-response = requests.post(
-    "http://localhost:8000/graphql",
-    json={"query": query}
-)
+try:
+    result = client.execute(query)
+    orders = result.get("orders", [])
 
-if response.status_code == 200:
-    data = response.json().get("data", {})
-    orders = data.get("orders", [])
+    for order in orders:
+        order_id = order["id"]
+        email = order["customer"]["email"]
+        logging.info(f"Reminder for Order ID {order_id} to {email}")
 
-    if orders:
-        for order in orders:
-            order_id = order["id"]
-            email = order["customer"]["email"]
-            logging.info(f"Order ID: {order_id}, Customer Email: {email}")
-    else:
-        logging.info("No recent orders found.")
     print("Order reminders processed!")
-else:
-    logging.error(f"Failed to fetch data from GraphQL. Status code: {response.status_code}")
-    print("Failed to fetch data from GraphQL.")
+
+except Exception as e:
+    logging.error(f"Failed to fetch or log orders: {e}")
+    print("An error occurred while processing reminders.")
