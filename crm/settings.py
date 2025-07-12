@@ -106,6 +106,7 @@ STATIC_URL = '/static/'
 # django-crontab scheduled jobs
 CRONJOBS = [
     ('*/5 * * * *', 'crm.cron.log_crm_heartbeat'),
+    ('0 */12 * * *', 'crm.cron.update_low_stock'), 
 ]
 
 # Default primary key field type
